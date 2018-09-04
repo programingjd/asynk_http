@@ -121,7 +121,7 @@ bintray {
     githubRepo = "programingjd/asynk_http"
     githubReleaseNotesFile = "README.md"
     setLicenses("Apache-2.0")
-    setLabels("asynk", "sql", "java", "kotlin", "async", "coroutines", "suspend")
+    setLabels("asynk", "http", "java", "kotlin", "async", "coroutines", "suspend")
     publicDownloadNumbers = true
     version(delegateClosureOf<BintrayExtension.VersionConfig> {
       name = "${project.version}"
