@@ -10,6 +10,12 @@ package info.jdavid.asynk.http
 class Headers(internal val lines: MutableList<String> = ArrayList(16)) {
 
   /**
+   * Returns the ordered list of header lines.
+   * @return the list of header lines.
+   */
+  fun lines(): List<String> = lines
+
+  /**
    * Adds a header line.
    * @param name the header field name.
    * @param value the header value.

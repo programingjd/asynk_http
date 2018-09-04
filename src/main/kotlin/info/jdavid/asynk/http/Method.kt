@@ -21,7 +21,7 @@ sealed class Method {
   data class Custom(val name: String): Method()
 
   companion object {
-    internal fun from(m: String): Method {
+    fun from(m: String): Method {
       return when(m) {
         "OPTIONS" -> OPTIONS
         "HEAD" -> HEAD
