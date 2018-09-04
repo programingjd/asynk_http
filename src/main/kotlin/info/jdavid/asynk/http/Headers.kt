@@ -7,13 +7,7 @@ package info.jdavid.asynk.http
  *   ...
  */
 @Suppress("MemberVisibilityCanBePrivate")
-class Headers(internal val lines: MutableList<String> = ArrayList(16)) {
-
-  /**
-   * Returns the ordered list of header lines.
-   * @return the list of header lines.
-   */
-  fun lines(): List<String> = lines
+class Headers(val lines: MutableList<String> = ArrayList(16)) {
 
   /**
    * Adds a header line.
