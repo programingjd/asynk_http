@@ -27,7 +27,7 @@ plugins {
 }
 
 group = "info.jdavid.asynk"
-version = "0.0.0.8.1"
+version = "0.0.0.9"
 
 repositories {
   jcenter()
@@ -35,7 +35,7 @@ repositories {
 
 dependencies {
   compile(kotlin("stdlib-jdk8"))
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:0.25.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:0.25.3")
   implementation("com.codahale:aes-gcm-siv:0.4.2")
   testImplementation("org.junit.jupiter:junit-jupiter-api:5.2.0")
   testRuntime("org.junit.jupiter:junit-jupiter-engine:5.2.0")
@@ -92,7 +92,7 @@ publishing {
     }
   }
   publications {
-    register("mavenJava", MavenPublication::class) {
+    register("mavenJava", MavenPublication::class.java) {
       from(components["java"])
       artifact(sourcesJar)
       artifact(javadocJar)
