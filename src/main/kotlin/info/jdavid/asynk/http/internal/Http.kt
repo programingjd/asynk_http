@@ -13,7 +13,13 @@ import java.util.concurrent.TimeUnit
 
 object Http {
 
-  fun httpVersion(buffer: ByteBuffer): Boolean {
+  enum class Version {
+    HTTP_1_0,
+    HTTP_1_1,
+    HTTP_2
+  }
+
+  fun httpVersion(buffer: ByteBuffer): Version {
     // Status line: (ASCII)
     // HTTP/1.1 CODE MESSAGE\r\n
 
@@ -29,8 +35,8 @@ object Http {
         buffer.get() != ONE ||
         buffer.get() != DOT) throw InvalidStatusLine()
     return when (buffer.get()) {
-      ONE -> false
-      ZERO -> true
+      ONE -> Version.HTTP_1_1
+      ZERO -> Version.HTTP_1_0
       else -> throw InvalidStatusLine()
     }
   }
@@ -177,6 +183,7 @@ object Http {
   }
 
   suspend fun body(socket: AsynchronousSocketChannel,
+                   version: Version,
                    buffer: ByteBuffer,
                    bodyAllowed: Boolean,
                    bodyRequired: Boolean,
@@ -185,7 +192,17 @@ object Http {
     buffer.compact().flip()
     val encoding = headers.value(Headers.TRANSFER_ENCODING)
     if (encoding == null || encoding == IDENTITY) {
-      val contentLength = headers.value(Headers.CONTENT_LENGTH)?.toInt() ?: 0
+      val contentLength =
+        headers.value(Headers.CONTENT_LENGTH)?.toInt() ?:
+        if (version == Version.HTTP_1_0) {
+          val limit = buffer.limit()
+          while (limit != buffer.capacity()) {
+            buffer.position(limit).limit(buffer.capacity())
+            if (socket.aRead(buffer, 5000L, TimeUnit.MILLISECONDS) < 1) break
+          }
+          buffer.limit(buffer.position()).position(limit)
+          buffer.limit()
+        } else 0
       if (buffer.limit() > contentLength) return Status.BAD_REQUEST
       if (contentLength > 0) {
         if (!bodyAllowed) return Status.BAD_REQUEST
