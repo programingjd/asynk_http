@@ -194,13 +194,12 @@ object Http {
     if (encoding == null || encoding == IDENTITY) {
       val contentLength =
         headers.value(Headers.CONTENT_LENGTH)?.toInt() ?:
-        if (version == Version.HTTP_1_0) {
-          val limit = buffer.limit()
-          while (limit != buffer.capacity()) {
-            buffer.position(limit).limit(buffer.capacity())
+        if (version == Version.HTTP_1_0 || headers.value(Headers.CONTENT_TYPE) != null) {
+          buffer.position(buffer.limit()).limit(buffer.capacity())
+          while (buffer.position() != buffer.capacity()) {
             if (socket.aRead(buffer, 5000L, TimeUnit.MILLISECONDS) < 1) break
           }
-          buffer.limit(buffer.position()).position(limit)
+          buffer.limit(buffer.position()).position(0)
           buffer.limit()
         } else 0
       if (buffer.limit() > contentLength) return Status.BAD_REQUEST
@@ -218,7 +217,7 @@ object Http {
           val limit = buffer.limit()
           buffer.position(limit).limit(buffer.capacity())
           if (socket.aRead(buffer, 5000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
-          buffer.limit(buffer.position()).position(limit)
+          buffer.limit(buffer.position()).position(0)
           if (buffer.limit() > contentLength) return Status.BAD_REQUEST
         }
       }
@@ -250,9 +249,10 @@ object Http {
           if (buffer.remaining() == 0) {
             val limit = buffer.limit()
             if (buffer.capacity() == limit) return Status.PAYLOAD_TOO_LARGE
+            val position = buffer.position()
             buffer.position(limit).limit(buffer.capacity())
             if (socket.aRead(buffer, 3000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
-            buffer.limit(buffer.position()).position(limit)
+            buffer.limit(buffer.position()).position(position)
           }
           val b = buffer.get()
           if (b == LF) { // End of chunk size line
@@ -271,7 +271,7 @@ object Http {
             buffer.limit(limit - end + start)
             if (buffer.capacity() - start < chunkSize + 2) return Status.PAYLOAD_TOO_LARGE
             while (buffer.limit() < start + chunkSize + 2) {
-              buffer.position(buffer.limit())
+              buffer.position(buffer.limit()).limit(buffer.capacity())
               if (socket.aRead(buffer, 3000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
               buffer.limit(buffer.position())
             }

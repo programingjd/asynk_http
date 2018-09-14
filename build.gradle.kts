@@ -27,7 +27,7 @@ plugins {
 }
 
 group = "info.jdavid.asynk"
-version = "0.0.0.12"
+version = "0.0.0.12.3"
 
 repositories {
   jcenter()
