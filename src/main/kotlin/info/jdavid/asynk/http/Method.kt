@@ -18,7 +18,9 @@ sealed class Method {
   object PATCH: Method()
 
   @Suppress("unused")
-  data class Custom(val name: String): Method()
+  data class Custom(val name: String): Method() {
+    override fun toString() = name
+  }
 
   companion object {
     fun from(m: String): Method {
