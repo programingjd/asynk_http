@@ -278,18 +278,19 @@ object Http {
             }
             buffer.position(start + chunkSize)
             // chunk bytes should be followed by \r\n
-            if (buffer.get() != CR || buffer.get() != LF) return Status.BAD_REQUEST
             if (chunkSize == 0) {
               // zero length chunk marks the end of the chunk list
               // skip trailing fields (look for \r\n\r\n sequence)
-              val last = buffer.position() - 2
+              val last = buffer.position()
               if (last > buffer.capacity() - 4) return Status.PAYLOAD_TOO_LARGE
               buffer.limit(limit)
               while (true) {
-                val limit = buffer.limit()
+                val l = buffer.limit()
                 if (buffer.remaining() > 1) {
-                  if (buffer[limit - 1] == LF && buffer[limit - 2] == CR &&
-                      buffer[limit - 3] == LF && buffer[limit - 4] == CR) break
+                  if (buffer[l - 1] == LF && buffer[l - 2] == CR) {
+                    if (l == limit) break
+                    if (buffer[l - 3] == LF && buffer[l - 4] == CR) break
+                  }
                 }
                 buffer.position(limit).limit(buffer.capacity())
                 if (socket.aRead(buffer, 3000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
@@ -297,6 +298,9 @@ object Http {
               }
               buffer.limit(last).position(0)
               break@chunks
+            }
+            else {
+              if (buffer.get() != CR || buffer.get() != LF) return Status.BAD_REQUEST
             }
             start = buffer.position() - 2
             break@bytes

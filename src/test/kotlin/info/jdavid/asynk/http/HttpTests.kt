@@ -93,7 +93,7 @@ class HttpTests {
         val server = async {
           it.aAccept().apply {
             val headers = Headers()
-            aRead(buffer, 15000L)
+            aRead(buffer, 1000L)
             buffer.flip()
             Http.headers(this, buffer, headers)
             assertEquals(4, headers.lines.size)
@@ -501,6 +501,280 @@ class HttpTests {
           AsynchronousSocketChannel.open().apply {
             aConnect(address)
             aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunked() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.aAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            aRead(buffer, 1000L)
+            buffer.flip()
+            assertNull(
+              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            )
+            assertEquals("this is the body.",
+                         String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            aConnect(address)
+            aWrite(ByteBuffer.wrap("2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()), 1000L)
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunkedInvalidTrailer() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.aAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            aRead(buffer, 1000L)
+            buffer.flip()
+            assertEquals(
+              Status.BAD_REQUEST,
+              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            )
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            aConnect(address)
+            aWrite(ByteBuffer.wrap("2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\na".toByteArray()), 1000L)
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunkedSlowConnection() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.aAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            aRead(buffer, 1000L)
+            buffer.flip()
+            assertNull(
+              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            )
+            assertEquals("this is the body.",
+                         String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            aConnect(address)
+            val arr = "2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()
+            val buf = ByteBuffer.allocateDirect(2)
+            for (b in arr) {
+              buf.put(b)
+              if (buf.position() == 2) {
+                buf.flip()
+                aWrite(buf, 250L)
+                buf.flip()
+              }
+              delay(100L)
+            }
+            if (buf.position() > 0) {
+              buf.flip()
+              aWrite(buf, 250L)
+            }
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunkedWithExtension() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.aAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            aRead(buffer, 1000L)
+            buffer.flip()
+            assertNull(
+              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            )
+            assertEquals("this is the body.",
+                         String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            aConnect(address)
+            aWrite(ByteBuffer.wrap("2; ext=1\r\nth\r\n3; ext=\"a\"\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()), 1000L)
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunkedWithExtensionSlowConnection() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.aAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            aRead(buffer, 1000L)
+            buffer.flip()
+            assertNull(
+              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            )
+            assertEquals("this is the body.",
+                         String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            aConnect(address)
+            val arr =
+              "2; ext=1\r\nth\r\n3; ext=\"a\"\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()
+            val buf = ByteBuffer.allocateDirect(2)
+            for (b in arr) {
+              buf.put(b)
+              if (buf.position() == 2) {
+                buf.flip()
+                aWrite(buf, 250L)
+                buf.flip()
+              }
+              delay(100L)
+            }
+            if (buf.position() > 0) {
+              buf.flip()
+              aWrite(buf, 250L)
+            }
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunkedWithTrailer() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.aAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            aRead(buffer, 1000L)
+            buffer.flip()
+            assertNull(
+              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            )
+            assertEquals("this is the body.",
+                         String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            aConnect(address)
+            aWrite(ByteBuffer.wrap("2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\nA: a1\r\nB: b1\r\n\r\n".toByteArray()), 1000L)
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunkedWithTrailerSlowConnection() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.aAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            aRead(buffer, 1000L)
+            buffer.flip()
+            assertNull(
+              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            )
+            assertEquals("this is the body.",
+                         String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            aConnect(address)
+            val arr =
+              "2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\nA: a1\r\nB: b1\r\n\r\n".toByteArray()
+            val buf = ByteBuffer.allocateDirect(2)
+            for (b in arr) {
+              buf.put(b)
+              if (buf.position() == 2) {
+                buf.flip()
+                aWrite(buf, 250L)
+                buf.flip()
+              }
+              delay(100L)
+            }
+            if (buf.position() > 0) {
+              buf.flip()
+              aWrite(buf, 250L)
+            }
           }
         }
         server.await().close()
