@@ -196,7 +196,8 @@ object Http {
         headers.value(Headers.CONTENT_LENGTH)?.toInt() ?:
         if (version == Version.HTTP_1_0 || headers.value(Headers.CONTENT_TYPE) != null) {
           buffer.position(buffer.limit()).limit(buffer.capacity())
-          while (buffer.position() != buffer.capacity()) {
+          while (true) {
+            if (buffer.position() == buffer.capacity()) return Status.PAYLOAD_TOO_LARGE
             if (socket.aRead(buffer, 5000L, TimeUnit.MILLISECONDS) < 1) break
           }
           buffer.limit(buffer.position()).position(0)
@@ -304,6 +305,7 @@ object Http {
         }
       }
     }
+    if (!bodyAllowed && buffer.remaining() > 0) return Status.BAD_REQUEST
     if (bodyRequired && buffer.remaining() == 0) return Status.BAD_REQUEST
     return null
   }

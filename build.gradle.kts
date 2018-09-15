@@ -20,14 +20,14 @@ buildscript {
 }
 
 plugins {
-  kotlin("jvm") version "1.2.61"
+  kotlin("jvm") version "1.2.70"
   `maven-publish`
   id("org.jetbrains.dokka") version "0.9.17"
-  id("com.jfrog.bintray") version "1.8.1"
+  id("com.jfrog.bintray") version "1.8.4"
 }
 
 group = "info.jdavid.asynk"
-version = "0.0.0.12.3"
+version = "0.0.0.13"
 
 repositories {
   jcenter()
@@ -35,8 +35,8 @@ repositories {
 
 dependencies {
   compile(kotlin("stdlib-jdk8"))
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:0.25.3")
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-nio:0.25.3")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:0.26.0")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-nio:0.26.0")
   implementation("com.codahale:aes-gcm-siv:0.4.2")
   testImplementation("org.junit.jupiter:junit-jupiter-api:5.3.0")
   testRuntime("org.junit.jupiter:junit-jupiter-engine:5.3.0")
