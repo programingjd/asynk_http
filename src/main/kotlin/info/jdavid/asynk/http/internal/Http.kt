@@ -181,7 +181,7 @@ object Http {
       if (i == buffer.limit()) {
         buffer.compact()
         if (buffer.position() == buffer.capacity()) throw HeadersTooLarge()
-        if (socket.aRead(buffer, 3000L, TimeUnit.MILLISECONDS) < 1) return false
+        if (socket.aRead(buffer, 5000L, TimeUnit.MILLISECONDS) < 1) return false
         buffer.flip()
         i -= j
         j = 0
@@ -262,7 +262,7 @@ object Http {
             if (buffer.capacity() == limit) return Status.PAYLOAD_TOO_LARGE
             val position = buffer.position()
             buffer.position(limit).limit(buffer.capacity())
-            if (socket.aRead(buffer, 3000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
+            if (socket.aRead(buffer, 5000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
             buffer.limit(buffer.position()).position(position)
           }
           val b = buffer.get()
@@ -283,7 +283,7 @@ object Http {
             if (buffer.capacity() - start < chunkSize + 2) return Status.PAYLOAD_TOO_LARGE
             while (buffer.limit() < start + chunkSize + 2) {
               buffer.position(buffer.limit()).limit(buffer.capacity())
-              if (socket.aRead(buffer, 3000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
+              if (socket.aRead(buffer, 5000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
               buffer.limit(buffer.position())
             }
             buffer.position(start + chunkSize)
