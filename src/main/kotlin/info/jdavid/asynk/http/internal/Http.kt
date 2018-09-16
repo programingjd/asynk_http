@@ -125,13 +125,21 @@ object Http {
 
     // url
     if (uri[0] != 'h' || uri[1] != 't' || uri[2] != 't' || uri[3] != 'p') return null
-    if (uri[5] == ':') {
-      if (uri[6] != '/' || uri[7] != '/') return null
-      return uri.substring(7)
+    if (uri[4] == ':') {
+      if (uri[5] != '/' || uri[6] != '/') return null
+      val n = uri.length
+      val q = uri.indexOf('#', 7).let { if (it == -1) n else it }
+      val h = uri.indexOf('?', 7).let { if (it == -1) n else it }
+      val s = uri.indexOf('/', 7)
+      return if (s == -1) "/" + uri.substring(Math.max(q, h)) else uri.substring(s)
     }
-    else if (uri[5] != 's' || uri[6] != ':') return null
-    if (uri[7] != '/' || uri[7] != '/') return null
-    return uri.substring(8)
+    else if (uri[4] != 's' || uri[5] != ':') return null
+    if (uri[6] != '/' || uri[7] != '/') return null
+    val n = uri.length
+    val q = uri.indexOf('#', 8).let { if (it == -1) n else it }
+    val h = uri.indexOf('?', 8).let { if (it == -1) n else it }
+    val s = uri.indexOf('/', 8)
+    return if (s == -1) "/" + uri.substring(Math.max(q, h)) else uri.substring(s)
   }
 
   suspend fun headers(socket: AsynchronousSocketChannel,
@@ -225,6 +233,7 @@ object Http {
     }
     else if (encoding == CHUNKED) {
       if (!bodyAllowed) return Status.BAD_REQUEST
+      if (headers.value(Headers.TRAILER) != null) return Status.BAD_REQUEST
       if (continueBuffer != null && headers.value(Headers.EXPECT)?.toLowerCase() == ONE_HUNDRED_CONTINUE) {
         if (buffer.remaining() > 0) return Status.UNSUPPORTED_MEDIA_TYPE
         continueBuffer.rewind()
@@ -244,6 +253,7 @@ object Http {
       // Trailing header fields are ignored.
       val sb = StringBuilder(12)
       var start = buffer.position()
+      var chunkSize = 1
       chunks@ while (true) { // for each chunk
         // Look for \r\n to extract the chunk length
         bytes@ while (true) {
@@ -259,7 +269,7 @@ object Http {
           if (b == LF) { // End of chunk size line
             if (sb.last().toByte() != CR) return Status.BAD_REQUEST
             val index = sb.indexOf(';') // ignore chunk extensions
-            val chunkSize = Integer.parseInt(
+            chunkSize = Integer.parseInt(
               if (index == -1) sb.trim().toString() else sb.substring(0, index).trim(),
               16
             )
@@ -277,33 +287,19 @@ object Http {
               buffer.limit(buffer.position())
             }
             buffer.position(start + chunkSize)
-            // chunk bytes should be followed by \r\n
             if (chunkSize == 0) {
-              // zero length chunk marks the end of the chunk list
-              // skip trailing fields (look for \r\n\r\n sequence)
-              val last = buffer.position()
-              if (last > buffer.capacity() - 4) return Status.PAYLOAD_TOO_LARGE
-              buffer.limit(limit)
-              while (true) {
-                val l = buffer.limit()
-                if (buffer.remaining() > 1) {
-                  if (buffer[l - 1] == LF && buffer[l - 2] == CR) {
-                    if (l == limit) break
-                    if (buffer[l - 3] == LF && buffer[l - 4] == CR) break
-                  }
-                }
-                buffer.position(limit).limit(buffer.capacity())
-                if (socket.aRead(buffer, 3000L, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
-                buffer.limit(buffer.position()).position(limit)
-              }
-              buffer.limit(last).position(0)
+              // Trailing headers are not supported because unless you specify "TE: trailer" in the request
+              // headers, then the server should not set any trailing header.
+              if (buffer.get() != CR || buffer.get() != LF) return Status.BAD_REQUEST
+              if (buffer.remaining() > 0) return Status.BAD_REQUEST
+              buffer.position(0).limit(start)
               break@chunks
             }
             else {
               if (buffer.get() != CR || buffer.get() != LF) return Status.BAD_REQUEST
+              start = buffer.position() - 2
+              break@bytes
             }
-            start = buffer.position() - 2
-            break@bytes
           }
           sb.append(b.toChar())
         }
