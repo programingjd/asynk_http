@@ -16,6 +16,7 @@ import javax.xml.xpath.XPathFactory
 buildscript {
   repositories {
     jcenter()
+    mavenCentral()
   }
 }
 
