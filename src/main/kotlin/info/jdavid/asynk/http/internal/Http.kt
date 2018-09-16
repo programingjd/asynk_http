@@ -131,7 +131,7 @@ object Http {
       val q = uri.indexOf('#', 7).let { if (it == -1) n else it }
       val h = uri.indexOf('?', 7).let { if (it == -1) n else it }
       val s = uri.indexOf('/', 7)
-      return if (s == -1) "/" + uri.substring(Math.max(q, h)) else uri.substring(s)
+      return if (s == -1) "/" + uri.substring(Math.min(q, h)) else uri.substring(s)
     }
     else if (uri[4] != 's' || uri[5] != ':') return null
     if (uri[6] != '/' || uri[7] != '/') return null
@@ -139,7 +139,7 @@ object Http {
     val q = uri.indexOf('#', 8).let { if (it == -1) n else it }
     val h = uri.indexOf('?', 8).let { if (it == -1) n else it }
     val s = uri.indexOf('/', 8)
-    return if (s == -1) "/" + uri.substring(Math.max(q, h)) else uri.substring(s)
+    return if (s == -1) "/" + uri.substring(Math.min(q, h)) else uri.substring(s)
   }
 
   suspend fun headers(socket: AsynchronousSocketChannel,
