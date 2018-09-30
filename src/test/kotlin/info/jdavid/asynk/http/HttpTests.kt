@@ -1,14 +1,15 @@
 package info.jdavid.asynk.http
 
+import info.jdavid.asynk.core.asyncAccept
+import info.jdavid.asynk.core.asyncConnect
+import info.jdavid.asynk.core.asyncRead
+import info.jdavid.asynk.core.asyncWrite
 import info.jdavid.asynk.http.internal.Http
 import kotlinx.coroutines.experimental.async
 import kotlinx.coroutines.experimental.delay
 import kotlinx.coroutines.experimental.launch
-import kotlinx.coroutines.experimental.nio.aAccept
-import kotlinx.coroutines.experimental.nio.aConnect
-import kotlinx.coroutines.experimental.nio.aRead
-import kotlinx.coroutines.experimental.nio.aWrite
 import kotlinx.coroutines.experimental.runBlocking
+import kotlinx.coroutines.experimental.withTimeout
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.net.InetAddress
@@ -125,9 +126,9 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers()
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             Http.headers(this, buffer, headers)
             assertEquals(4, headers.lines.size)
@@ -141,8 +142,10 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("A:a1\r\nB: b1\r\nC: c1; c2\r\nA: a2\r\n\r\n".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000) {
+              asyncWrite(ByteBuffer.wrap("A:a1\r\nB: b1\r\nC: c1; c2\r\nA: a2\r\n\r\n".toByteArray()))
+            }
           }
         }
         server.await().close()
@@ -159,9 +162,9 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers()
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             Http.headers(this, buffer, headers)
             assertEquals(4, headers.lines.size)
@@ -175,21 +178,21 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
+            asyncConnect(address)
             val arr = "A:a1\r\nB: b1\r\nC: c1; c2\r\nA: a2\r\n\r\n".toByteArray()
             val buf = ByteBuffer.allocateDirect(2)
             for (b in arr) {
               buf.put(b)
               if (buf.position() == 2) {
                 buf.flip()
-                aWrite(buf, 250L)
+                withTimeout(250L) { asyncWrite(buf) }
                 buf.flip()
               }
               delay(100L)
             }
             if (buf.position() > 0) {
               buf.flip()
-              aWrite(buf, 250L)
+              withTimeout(250L) { asyncWrite(buf) }
             }
           }
         }
@@ -207,9 +210,9 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().add(Headers.CONTENT_TYPE, MediaType.TEXT)
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
@@ -219,8 +222,8 @@ class HttpTests {
         }
         launch {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap("this is the body.".toByteArray())) }
             close()
           }
         }
@@ -237,11 +240,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.CONTENT_LENGTH,"17")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
@@ -251,8 +254,8 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap("this is the body.".toByteArray())) }
           }
         }
         server.await().close()
@@ -269,9 +272,9 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().add(Headers.CONTENT_TYPE, MediaType.TEXT)
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_0, buffer, true, false, headers, null)
@@ -282,8 +285,8 @@ class HttpTests {
         }
         launch {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap("this is the body.".toByteArray())) }
             close()
           }
         }
@@ -300,9 +303,9 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().add(Headers.CONTENT_TYPE, MediaType.TEXT)
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_0, buffer, true, false, headers, null)
@@ -313,21 +316,21 @@ class HttpTests {
         }
         launch {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
+            asyncConnect(address)
             val arr = "this is the body.".toByteArray()
             val buf = ByteBuffer.allocateDirect(2)
             for (b in arr) {
               buf.put(b)
               if (buf.position() == 2) {
                 buf.flip()
-                aWrite(buf, 250L)
+                withTimeout(250L) { asyncWrite(buf) }
                 buf.flip()
               }
               delay(100L)
             }
             if (buf.position() > 0) {
               buf.flip()
-              aWrite(buf, 250L)
+              withTimeout(250L) { asyncWrite(buf) }
             }
             close()
           }
@@ -345,11 +348,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.CONTENT_LENGTH, "17")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
@@ -360,8 +363,8 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap("this is the body.".toByteArray())) }
           }
         }
         server.await().close()
@@ -378,11 +381,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.CONTENT_LENGTH, "17")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
@@ -393,21 +396,21 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
+            asyncConnect(address)
             val arr = "this is the body.".toByteArray()
             val buf = ByteBuffer.allocateDirect(2)
             for (b in arr) {
               buf.put(b)
               if (buf.position() == 2) {
                 buf.flip()
-                aWrite(buf, 250L)
+                withTimeout(250L) { asyncWrite(buf) }
                 buf.flip()
               }
               delay(100L)
             }
             if (buf.position() > 0) {
               buf.flip()
-              aWrite(buf, 250L)
+              withTimeout(250L) { asyncWrite(buf) }
             }
           }
         }
@@ -425,11 +428,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.CONTENT_LENGTH, "16")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
@@ -439,8 +442,8 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap("this is the body.".toByteArray())) }
           }
         }
         server.await().close()
@@ -457,10 +460,10 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT)
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.PAYLOAD_TOO_LARGE,
@@ -470,8 +473,12 @@ class HttpTests {
         }
         launch {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is a body that is too large to fit in the buffer.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) {
+              asyncWrite(
+                ByteBuffer.wrap("this is a body that is too large to fit in the buffer.".toByteArray())
+              )
+            }
             close()
           }
         }
@@ -488,11 +495,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.CONTENT_LENGTH, "54")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.PAYLOAD_TOO_LARGE,
@@ -502,8 +509,12 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is a body that is too large to fit in the buffer.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) {
+              asyncWrite(
+                ByteBuffer.wrap("this is a body that is too large to fit in the buffer.".toByteArray())
+              )
+            }
           }
         }
         server.await().close()
@@ -520,11 +531,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.CONTENT_ENCODING, "br")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.UNSUPPORTED_MEDIA_TYPE,
@@ -534,8 +545,8 @@ class HttpTests {
         }
         launch {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap("this is the body.".toByteArray())) }
             close()
           }
         }
@@ -552,12 +563,12 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.CONTENT_LENGTH, "17").
               add(Headers.CONTENT_ENCODING, "br")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.UNSUPPORTED_MEDIA_TYPE,
@@ -567,8 +578,8 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("this is the body.".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap("this is the body.".toByteArray())) }
           }
         }
         server.await().close()
@@ -585,11 +596,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.TRANSFER_ENCODING, "chunked")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
@@ -600,8 +611,12 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) {
+              asyncWrite(ByteBuffer.wrap(
+                "2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()
+              ))
+            }
           }
         }
         server.await().close()
@@ -618,11 +633,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.TRANSFER_ENCODING, "chunked")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
@@ -633,21 +648,21 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
+            asyncConnect(address)
             val arr = "2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()
             val buf = ByteBuffer.allocateDirect(2)
             for (b in arr) {
               buf.put(b)
               if (buf.position() == 2) {
                 buf.flip()
-                aWrite(buf, 250L)
+                withTimeout(250L) { asyncWrite(buf) }
                 buf.flip()
               }
               delay(100L)
             }
             if (buf.position() > 0) {
               buf.flip()
-              aWrite(buf, 250L)
+              withTimeout(250L) { asyncWrite(buf) }
             }
           }
         }
@@ -665,11 +680,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.TRANSFER_ENCODING, "chunked")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
@@ -679,8 +694,12 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\naaa".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) {
+              asyncWrite(ByteBuffer.wrap(
+                "2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\naaa".toByteArray()
+              ))
+            }
           }
         }
         server.await().close()
@@ -697,11 +716,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.TRANSFER_ENCODING, "chunked")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
@@ -711,21 +730,21 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
+            asyncConnect(address)
             val arr = "2\r\nth\r\n3\r\nis \r\n8\r\nis the b\r\n5\r\nody. \r\n0\r\n\r\na".toByteArray()
             val buf = ByteBuffer.allocateDirect(2)
             for (b in arr) {
               buf.put(b)
               if (buf.position() == 2) {
                 buf.flip()
-                aWrite(buf, 250L)
+                withTimeout(250L) { asyncWrite(buf) }
                 buf.flip()
               }
               delay(100L)
             }
             if (buf.position() > 0) {
               buf.flip()
-              aWrite(buf, 250L)
+              withTimeout(250L) { asyncWrite(buf) }
             }
           }
         }
@@ -743,11 +762,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.TRANSFER_ENCODING, "chunked")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
@@ -758,8 +777,12 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
-            aWrite(ByteBuffer.wrap("2; ext=1\r\nth\r\n3; ext=\"a\"\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()), 1000L)
+            asyncConnect(address)
+            withTimeout(1000L) {
+              asyncWrite(ByteBuffer.wrap(
+                "2; ext=1\r\nth\r\n3; ext=\"a\"\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()
+              ))
+            }
           }
         }
         server.await().close()
@@ -776,11 +799,11 @@ class HttpTests {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
         val server = async {
-          it.aAccept().apply {
+          it.asyncAccept().apply {
             val headers = Headers().
               add(Headers.CONTENT_TYPE, MediaType.TEXT).
               add(Headers.TRANSFER_ENCODING, "chunked")
-            aRead(buffer, 1000L)
+            withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
             assertNull(
               Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
@@ -791,7 +814,7 @@ class HttpTests {
         }
         val client = async {
           AsynchronousSocketChannel.open().apply {
-            aConnect(address)
+            asyncConnect(address)
             val arr =
               "2; ext=1\r\nth\r\n3; ext=\"a\"\r\nis \r\n8\r\nis the b\r\n4\r\nody.\r\n0\r\n\r\n".toByteArray()
             val buf = ByteBuffer.allocateDirect(2)
@@ -799,14 +822,14 @@ class HttpTests {
               buf.put(b)
               if (buf.position() == 2) {
                 buf.flip()
-                aWrite(buf, 250L)
+                withTimeout(250L) { asyncWrite(buf) }
                 buf.flip()
               }
               delay(100L)
             }
             if (buf.position() > 0) {
               buf.flip()
-              aWrite(buf, 250L)
+              withTimeout(250L) { asyncWrite(buf) }
             }
           }
         }

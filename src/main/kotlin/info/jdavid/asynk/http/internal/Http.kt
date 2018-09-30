@@ -2,14 +2,14 @@
 
 package info.jdavid.asynk.http.internal
 
+import info.jdavid.asynk.core.asyncRead
+import info.jdavid.asynk.core.asyncWrite
 import info.jdavid.asynk.http.Headers
 import info.jdavid.asynk.http.Method
 import info.jdavid.asynk.http.Status
-import kotlinx.coroutines.experimental.nio.aRead
-import kotlinx.coroutines.experimental.nio.aWrite
+import kotlinx.coroutines.experimental.withTimeout
 import java.nio.ByteBuffer
 import java.nio.channels.AsynchronousSocketChannel
-import java.util.concurrent.TimeUnit
 
 object Http {
 
@@ -182,7 +182,7 @@ object Http {
       if (i == buffer.limit()) {
         buffer.compact()
         if (buffer.position() == buffer.capacity()) throw HeadersTooLarge()
-        if (socket.aRead(buffer, timeout, TimeUnit.MILLISECONDS) < 1) return false
+        if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return false
         buffer.flip()
         i -= j
         j = 0
@@ -208,7 +208,7 @@ object Http {
           buffer.position(buffer.limit()).limit(buffer.capacity())
           while (true) {
             if (buffer.position() == buffer.capacity()) return Status.PAYLOAD_TOO_LARGE
-            if (socket.aRead(buffer, timeout, TimeUnit.MILLISECONDS) < 1) break
+            if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) break
           }
           buffer.limit(buffer.position()).position(0)
           buffer.limit()
@@ -222,12 +222,12 @@ object Http {
         if (continueBuffer != null && headers.value(Headers.EXPECT)?.toLowerCase() == ONE_HUNDRED_CONTINUE) {
           if (buffer.remaining() > 0) return Status.UNSUPPORTED_MEDIA_TYPE
           continueBuffer.rewind()
-          while (continueBuffer.remaining() > 0) socket.aWrite(continueBuffer)
+          while (continueBuffer.remaining() > 0) withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
         }
         while (contentLength > buffer.limit()) {
           val limit = buffer.limit()
           buffer.position(limit).limit(buffer.capacity())
-          if (socket.aRead(buffer, timeout, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
+          if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return Status.BAD_REQUEST
           buffer.limit(buffer.position()).position(0)
           if (buffer.limit() > contentLength) return Status.BAD_REQUEST
         }
@@ -239,7 +239,7 @@ object Http {
       if (continueBuffer != null && headers.value(Headers.EXPECT)?.toLowerCase() == ONE_HUNDRED_CONTINUE) {
         if (buffer.remaining() > 0) return Status.UNSUPPORTED_MEDIA_TYPE
         continueBuffer.rewind()
-        while (continueBuffer.remaining() > 0) socket.aWrite(continueBuffer)
+        while (continueBuffer.remaining() > 0) withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
       }
       // Body with chunked encoding
       // CHUNK_1_LENGTH_HEX\r\n
@@ -255,7 +255,6 @@ object Http {
       // Trailing header fields are ignored.
       val sb = StringBuilder(12)
       var start = buffer.position()
-      var chunkSize = 1
       chunks@ while (true) { // for each chunk
         // Look for \r\n to extract the chunk length
         bytes@ while (true) {
@@ -264,14 +263,14 @@ object Http {
             if (buffer.capacity() == limit) return Status.PAYLOAD_TOO_LARGE
             val position = buffer.position()
             buffer.position(limit).limit(buffer.capacity())
-            if (socket.aRead(buffer, timeout, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
+            if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return Status.BAD_REQUEST
             buffer.limit(buffer.position()).position(position)
           }
           val b = buffer.get()
           if (b == LF) { // End of chunk size line
             if (sb.last().toByte() != CR) return Status.BAD_REQUEST
             val index = sb.indexOf(';') // ignore chunk extensions
-            chunkSize = Integer.parseInt(
+            val chunkSize = Integer.parseInt(
               if (index == -1) sb.trim().toString() else sb.substring(0, index).trim(),
               16
             )
@@ -285,7 +284,7 @@ object Http {
             if (buffer.capacity() - start < chunkSize + 2) return Status.PAYLOAD_TOO_LARGE
             while (buffer.limit() < start + chunkSize + 2) {
               buffer.position(buffer.limit()).limit(buffer.capacity())
-              if (socket.aRead(buffer, timeout, TimeUnit.MILLISECONDS) < 1) return Status.BAD_REQUEST
+              if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return Status.BAD_REQUEST
               buffer.limit(buffer.position())
             }
             buffer.position(start + chunkSize)
