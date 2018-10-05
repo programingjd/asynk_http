@@ -7,7 +7,7 @@ import info.jdavid.asynk.core.asyncWrite
 import info.jdavid.asynk.http.Headers
 import info.jdavid.asynk.http.Method
 import info.jdavid.asynk.http.Status
-import kotlinx.coroutines.experimental.withTimeout
+import kotlinx.coroutines.withTimeout
 import java.nio.ByteBuffer
 import java.nio.channels.AsynchronousSocketChannel
 

@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions")
+
 package info.jdavid.asynk.http
 
 import com.codahale.aesgcmsiv.AEAD
