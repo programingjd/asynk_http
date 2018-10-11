@@ -24,7 +24,7 @@ object Http {
     // HTTP/1.1 CODE MESSAGE\r\n
 
     // Shortest possible status line is 15 bytes long
-    if (buffer.remaining() < 15) throw InvalidStatusLine()
+    if (buffer.remaining() < 10) throw InvalidStatusLine()
 
     // It should start with HTTP/1.
     if (buffer.get() != H_UPPER ||
@@ -110,16 +110,14 @@ object Http {
     buffer.get()
 
     // 3. HTTP/1.1\r\n should follow
-    if (buffer.get() != H_UPPER ||
-        buffer.get() != T_UPPER ||
-        buffer.get() != T_UPPER ||
-        buffer.get() != P_UPPER ||
-        buffer.get() != SLASH ||
-        buffer.get() != ONE ||
-        buffer.get() != DOT ||
-        buffer.get() != ONE ||
-        buffer.get() != CR ||
-        buffer.get() != LF) return null
+    try {
+      httpVersion(buffer)
+    }
+    catch (e: InvalidStatusLine) {
+      return null
+    }
+
+    if (buffer.get() != CR || buffer.get() != LF) return null
 
     if (uri[0] == '/') return uri // absolute path
 
