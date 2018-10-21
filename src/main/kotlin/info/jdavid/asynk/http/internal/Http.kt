@@ -212,9 +212,11 @@ object Http {
           while (true) {
             if (buf.position() == buf.capacity()) {
               if (buf == buffer && context.maxRequestSize > buffer.capacity()) {
-                buffer.flip()
+                val position = buffer.position()
+                buffer.position(0)
                 buf = ByteBuffer.allocateDirect(context.maxRequestSize) ?: return Status.PAYLOAD_TOO_LARGE
                 buf.put(buffer)
+                buf.position(position)
               }
               else return Status.PAYLOAD_TOO_LARGE
             }
@@ -233,9 +235,12 @@ object Http {
         if (compression != null && compression != IDENTITY) return Status.UNSUPPORTED_MEDIA_TYPE
         if (contentLength > buf.capacity()) {
           if (buf == buffer && context.maxRequestSize > buf.capacity()) {
-            buf.flip()
+            val limit = buffer.limit()
+            val position = buffer.position()
+            buffer.position(0)
             buf = ByteBuffer.allocateDirect(contentLength) ?: return Status.PAYLOAD_TOO_LARGE
             buf.put(buffer)
+            buf.position(position).limit(limit)
           }
           else  return Status.PAYLOAD_TOO_LARGE
         }
@@ -295,9 +300,11 @@ object Http {
             val limit = buf.limit()
             if (buf.capacity() == limit) {
               if (buf == buffer && context.maxRequestSize > buffer.capacity()) {
-                buffer.flip()
+                val position = buffer.position()
+                buffer.position(0)
                 buf = ByteBuffer.allocateDirect(context.maxRequestSize) ?: return Status.PAYLOAD_TOO_LARGE
                 buf.put(buffer)
+                buf.position(position).limit(limit)
               }
               else return Status.PAYLOAD_TOO_LARGE
             }
@@ -329,8 +336,7 @@ object Http {
                 buffer.position(0)
                 buf = ByteBuffer.allocateDirect(context.maxRequestSize) ?: return Status.PAYLOAD_TOO_LARGE
                 buf.put(buffer)
-                buf.position(start)
-                buf.limit(limit - end + start)
+                buf.position(start).limit(limit - end + start)
               }
               else return Status.PAYLOAD_TOO_LARGE
             }
