@@ -63,6 +63,12 @@ class HttpTests {
       assertEquals("/#frag", Http.uri(this))
     }
     ByteBuffer.wrap(
+      "GET / HTTP/1.0\r\n".toByteArray()
+    ).apply {
+      assertEquals(Method.GET, Http.method(this))
+      assertEquals("/", Http.uri(this))
+    }
+    ByteBuffer.wrap(
       "GET https://example.com/abc/def#frag HTTP/1.1\r\n".toByteArray()
     ).apply {
       assertEquals(Method.GET, Http.method(this))
@@ -72,12 +78,6 @@ class HttpTests {
       "### / HTTP/1.1\r\n".toByteArray()
     ).apply {
       assertNull(Http.method(this))
-    }
-    ByteBuffer.wrap(
-      "GET / HTTP/1.0\r\n".toByteArray()
-    ).apply {
-      assertEquals(Method.GET, Http.method(this))
-      assertNull(Http.uri(this))
     }
     ByteBuffer.wrap(
       "GET /absolute/path\r\n".toByteArray()
