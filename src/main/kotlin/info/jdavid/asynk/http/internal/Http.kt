@@ -182,7 +182,10 @@ object Http {
       if (i == buffer.limit()) {
         buffer.compact()
         if (buffer.position() == buffer.capacity()) throw HeadersTooLarge()
-        if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return false
+        if (timeout > 0L) {
+          if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1L) return false
+        }
+        else if (socket.asyncRead(buffer) < 1L) return false
         buffer.flip()
         i -= j
         j = 0
@@ -194,12 +197,14 @@ object Http {
   suspend fun body(socket: AsynchronousSocketChannel,
                    version: Version,
                    buffer: ByteBuffer,
+                   context: Context,
                    bodyAllowed: Boolean,
                    bodyRequired: Boolean,
                    headers: Headers,
                    continueBuffer: ByteBuffer?,
-                   timeout: Long = 5000L): Int? {
+                   timeout: Long = 5000L): Int {
     buffer.compact().flip()
+    var buf = buffer
     val encoding = headers.value(Headers.TRANSFER_ENCODING)
     if (encoding == null || encoding == IDENTITY) {
       val contentLength =
@@ -207,29 +212,54 @@ object Http {
         if (version == Version.HTTP_1_0 || headers.value(Headers.CONTENT_TYPE) != null) {
           buffer.position(buffer.limit()).limit(buffer.capacity())
           while (true) {
-            if (buffer.position() == buffer.capacity()) return Status.PAYLOAD_TOO_LARGE
-            if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) break
+            if (buf.position() == buf.capacity()) {
+              if (buf == buffer && context.maxRequestSize > buffer.capacity()) {
+                buffer.flip()
+                buf = ByteBuffer.allocateDirect(context.maxRequestSize) ?: return Status.PAYLOAD_TOO_LARGE
+                buf.put(buffer)
+              }
+              else return Status.PAYLOAD_TOO_LARGE
+            }
+            if (timeout > 0L) {
+              if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) break
+            }
+            else if (socket.asyncRead(buf) < 1L) break
           }
-          buffer.limit(buffer.position()).position(0)
-          buffer.limit()
+          buf.limit(buf.position()).position(0)
+          buf.limit()
         } else 0
-      if (buffer.limit() > contentLength) return Status.BAD_REQUEST
+      if (buf.limit() > contentLength) return Status.BAD_REQUEST
       if (contentLength > 0) {
         if (!bodyAllowed) return Status.BAD_REQUEST
         val compression = headers.value(Headers.CONTENT_ENCODING)
         if (compression != null && compression != IDENTITY) return Status.UNSUPPORTED_MEDIA_TYPE
-        if (contentLength > buffer.capacity()) return Status.PAYLOAD_TOO_LARGE
-        if (continueBuffer != null && headers.value(Headers.EXPECT)?.toLowerCase() == ONE_HUNDRED_CONTINUE) {
-          if (buffer.remaining() > 0) return Status.UNSUPPORTED_MEDIA_TYPE
-          continueBuffer.rewind()
-          while (continueBuffer.remaining() > 0) withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
+        if (contentLength > buf.capacity()) {
+          if (buf == buffer && context.maxRequestSize > buf.capacity()) {
+            buf.flip()
+            buf = ByteBuffer.allocateDirect(contentLength) ?: return Status.PAYLOAD_TOO_LARGE
+            buf.put(buffer)
+          }
+          else  return Status.PAYLOAD_TOO_LARGE
         }
-        while (contentLength > buffer.limit()) {
-          val limit = buffer.limit()
-          buffer.position(limit).limit(buffer.capacity())
-          if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return Status.BAD_REQUEST
-          buffer.limit(buffer.position()).position(0)
-          if (buffer.limit() > contentLength) return Status.BAD_REQUEST
+        if (continueBuffer != null && headers.value(Headers.EXPECT)?.toLowerCase() == ONE_HUNDRED_CONTINUE) {
+          if (buf.remaining() > 0) return Status.UNSUPPORTED_MEDIA_TYPE
+          continueBuffer.rewind()
+          while (continueBuffer.remaining() > 0) {
+            if (timeout > 0L) {
+              withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
+            }
+            else socket.asyncWrite(continueBuffer)
+          }
+        }
+        while (contentLength > buf.limit()) {
+          val limit = buf.limit()
+          buf.position(limit).limit(buf.capacity())
+          if (timeout > 0L) {
+            if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) return Status.BAD_REQUEST
+          }
+          else if (socket.asyncRead(buf) < 1L) return Status.BAD_REQUEST
+          buf.limit(buf.position()).position(0)
+          if (buf.limit() > contentLength) return Status.BAD_REQUEST
         }
       }
     }
@@ -239,7 +269,12 @@ object Http {
       if (continueBuffer != null && headers.value(Headers.EXPECT)?.toLowerCase() == ONE_HUNDRED_CONTINUE) {
         if (buffer.remaining() > 0) return Status.UNSUPPORTED_MEDIA_TYPE
         continueBuffer.rewind()
-        while (continueBuffer.remaining() > 0) withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
+        while (continueBuffer.remaining() > 0) {
+          if (timeout > 0L) {
+            withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
+          }
+          else socket.asyncWrite(continueBuffer)
+        }
       }
       // Body with chunked encoding
       // CHUNK_1_LENGTH_HEX\r\n
@@ -258,15 +293,25 @@ object Http {
       chunks@ while (true) { // for each chunk
         // Look for \r\n to extract the chunk length
         bytes@ while (true) {
-          if (buffer.remaining() == 0) {
-            val limit = buffer.limit()
-            if (buffer.capacity() == limit) return Status.PAYLOAD_TOO_LARGE
-            val position = buffer.position()
-            buffer.position(limit).limit(buffer.capacity())
-            if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return Status.BAD_REQUEST
-            buffer.limit(buffer.position()).position(position)
+          if (buf.remaining() == 0) {
+            val limit = buf.limit()
+            if (buf.capacity() == limit) {
+              if (buf == buffer && context.maxRequestSize > buffer.capacity()) {
+                buffer.flip()
+                buf = ByteBuffer.allocateDirect(context.maxRequestSize) ?: return Status.PAYLOAD_TOO_LARGE
+                buf.put(buffer)
+              }
+              else return Status.PAYLOAD_TOO_LARGE
+            }
+            val position = buf.position()
+            buf.position(limit).limit(buf.capacity())
+            if (timeout > 0L) {
+              if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) return Status.BAD_REQUEST
+            }
+            else if (socket.asyncRead(buf) < 1L) return Status.BAD_REQUEST
+            buf.limit(buf.position()).position(position)
           }
-          val b = buffer.get()
+          val b = buf.get()
           if (b == LF) { // End of chunk size line
             if (sb.last().toByte() != CR) return Status.BAD_REQUEST
             val index = sb.indexOf(';') // ignore chunk extensions
@@ -276,29 +321,41 @@ object Http {
             )
             // remove chunk size line bytes from the buffer, and skip the chunk bytes
             sb.delete(0, sb.length)
-            val end = buffer.position()
-            val limit = buffer.limit()
-            buffer.position(start)
-            (buffer.slice().position(end - start) as ByteBuffer).compact()
-            buffer.limit(limit - end + start)
-            if (buffer.capacity() - start < chunkSize + 2) return Status.PAYLOAD_TOO_LARGE
-            while (buffer.limit() < start + chunkSize + 2) {
-              buffer.position(buffer.limit()).limit(buffer.capacity())
-              if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1) return Status.BAD_REQUEST
-              buffer.limit(buffer.position())
+            val end = buf.position()
+            val limit = buf.limit()
+            buf.position(start)
+            (buf.slice().position(end - start) as ByteBuffer).compact()
+            buf.limit(limit - end + start)
+            if (buf.capacity() - start < chunkSize + 2) {
+              if (buf == buffer && context.maxRequestSize > buffer.capacity()) {
+                buffer.position(0)
+                buf = ByteBuffer.allocateDirect(context.maxRequestSize) ?: return Status.PAYLOAD_TOO_LARGE
+                buf.put(buffer)
+                buf.position(start)
+                buf.limit(limit - end + start)
+              }
+              else return Status.PAYLOAD_TOO_LARGE
             }
-            buffer.position(start + chunkSize)
+            while (buf.limit() < start + chunkSize + 2) {
+              buf.position(buf.limit()).limit(buf.capacity())
+              if (timeout > 0L) {
+                if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) return Status.BAD_REQUEST
+              }
+              else if (socket.asyncRead(buf) < 1L) return Status.BAD_REQUEST
+              buf.limit(buf.position())
+            }
+            buf.position(start + chunkSize)
             if (chunkSize == 0) {
               // Trailing headers are not supported because unless you specify "TE: trailer" in the request
               // headers, then the server should not set any trailing header.
-              if (buffer.get() != CR || buffer.get() != LF) return Status.BAD_REQUEST
-              if (buffer.remaining() > 0) return Status.BAD_REQUEST
-              buffer.position(0).limit(start)
+              if (buf.get() != CR || buf.get() != LF) return Status.BAD_REQUEST
+              if (buf.remaining() > 0) return Status.BAD_REQUEST
+              buf.position(0).limit(start)
               break@chunks
             }
             else {
-              if (buffer.get() != CR || buffer.get() != LF) return Status.BAD_REQUEST
-              start = buffer.position() - 2
+              if (buf.get() != CR || buf.get() != LF) return Status.BAD_REQUEST
+              start = buf.position() - 2
               break@bytes
             }
           }
@@ -306,9 +363,11 @@ object Http {
         }
       }
     }
-    if (!bodyAllowed && buffer.remaining() > 0) return Status.BAD_REQUEST
-    if (bodyRequired && buffer.remaining() == 0) return Status.BAD_REQUEST
-    return null
+    if (!bodyAllowed && buf.remaining() > 0) return Status.BAD_REQUEST
+    if (bodyRequired && buf.remaining() == 0) return Status.BAD_REQUEST
+    if (buf == buffer) return 0
+    context.buffer = buf
+    return 1
   }
 
   private const val CR: Byte = 0x0d

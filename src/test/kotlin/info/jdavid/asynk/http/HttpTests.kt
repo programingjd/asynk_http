@@ -4,6 +4,7 @@ import info.jdavid.asynk.core.asyncAccept
 import info.jdavid.asynk.core.asyncConnect
 import info.jdavid.asynk.core.asyncRead
 import info.jdavid.asynk.core.asyncWrite
+import info.jdavid.asynk.http.internal.Context
 import info.jdavid.asynk.http.internal.Http
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -17,6 +18,7 @@ import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.AsynchronousServerSocketChannel
 import java.nio.channels.AsynchronousSocketChannel
+import java.security.SecureRandom
 
 class HttpTests {
 
@@ -206,6 +208,10 @@ class HttpTests {
   fun testBodyHttp10BodyNotAllowed() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -216,8 +222,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
-              Http.body(this, Http.Version.HTTP_1_0, buffer, false, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_0,
+                buffer,
+                context,
+                false,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         launch {
@@ -236,6 +252,10 @@ class HttpTests {
   fun testBodyHttp11BodyNotAllowed() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -248,8 +268,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
-              Http.body(this, Http.Version.HTTP_1_1, buffer, false, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                false,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         val client = async {
@@ -268,6 +298,10 @@ class HttpTests {
   fun testBodyHttp10() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -276,11 +310,18 @@ class HttpTests {
             val headers = Headers().add(Headers.CONTENT_TYPE, MediaType.TEXT)
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_0, buffer, true, false, headers, null)
-            )
+            assertEquals(0, Http.body(
+              this,
+              Http.Version.HTTP_1_0,
+              buffer,
+              context,
+              true,
+              false,
+              headers,
+              null))
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
+            assertNull(context.buffer)
           }
         }
         launch {
@@ -296,9 +337,14 @@ class HttpTests {
   }
 
   @Test
-  fun testBodyHttp10SlowConnection() {
+  fun testLargeBodyHttp10() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
+    val bytes = SecureRandom.getSeed(12000)
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -307,9 +353,66 @@ class HttpTests {
             val headers = Headers().add(Headers.CONTENT_TYPE, MediaType.TEXT)
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_0, buffer, true, false, headers, null)
+            assertEquals(
+              1,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_0,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            val buf = context.buffer ?: fail<Nothing>("Context buffer should not be null.")
+            assertEquals(Crypto.hex(bytes),
+                         Crypto.hex(ByteArray(buf.remaining()).apply { buf.get(this) }))
+          }
+        }
+        launch {
+          AsynchronousSocketChannel.open().apply {
+            asyncConnect(address)
+            withTimeout(1000L) { asyncWrite(ByteBuffer.wrap(bytes)) }
+            close()
+          }
+        }
+        server.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyHttp10SlowConnection() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.asyncAccept().apply {
+            val headers = Headers().add(Headers.CONTENT_TYPE, MediaType.TEXT)
+            withTimeout(1000L) { asyncRead(buffer) }
+            buffer.flip()
+            assertEquals(
+              0,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_0,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
+            )
+            assertNull(context.buffer)
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
           }
@@ -344,6 +447,10 @@ class HttpTests {
   fun testBodyHttp11() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -354,9 +461,19 @@ class HttpTests {
               add(Headers.CONTENT_LENGTH, "17")
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            assertEquals(
+              0,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null)
             )
+            assertNull(context.buffer)
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
           }
@@ -377,6 +494,10 @@ class HttpTests {
   fun testBodyHttp11SlowConnection() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -387,9 +508,20 @@ class HttpTests {
               add(Headers.CONTENT_LENGTH, "17")
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            assertEquals(
+              0,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
           }
@@ -424,6 +556,10 @@ class HttpTests {
   fun testBodyHttp11WrongContentLength() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -436,8 +572,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         val client = async {
@@ -456,6 +602,10 @@ class HttpTests {
   fun testBodyTooLargeHttp10() {
     val buffer = ByteBuffer.allocateDirect(48)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 48
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -467,8 +617,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.PAYLOAD_TOO_LARGE,
-              Http.body(this, Http.Version.HTTP_1_0, buffer, true, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_0,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         launch {
@@ -491,6 +651,10 @@ class HttpTests {
   fun testBodyTooLargeHttp11() {
     val buffer = ByteBuffer.allocateDirect(48)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 48
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -503,8 +667,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.PAYLOAD_TOO_LARGE,
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         val client = async {
@@ -527,6 +701,10 @@ class HttpTests {
   fun testBodyHttp10UnsupportedCompression() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -539,8 +717,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.UNSUPPORTED_MEDIA_TYPE,
-              Http.body(this, Http.Version.HTTP_1_0, buffer, true, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_0,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         launch {
@@ -559,6 +747,10 @@ class HttpTests {
   fun testBodyHttp11UnsupportedCompression() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -572,8 +764,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.UNSUPPORTED_MEDIA_TYPE,
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         val client = async {
@@ -592,6 +794,10 @@ class HttpTests {
   fun testBodyChunked() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -602,9 +808,20 @@ class HttpTests {
               add(Headers.TRANSFER_ENCODING, "chunked")
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            assertEquals(
+              0,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
           }
@@ -626,9 +843,17 @@ class HttpTests {
   }
 
   @Test
-  fun testBodyChunkedSlowConnection() {
+  fun testLargeBodyChunked() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val bytes1 = SecureRandom.getSeed(2000)
+    val bytes2 = SecureRandom.getSeed(3000)
+    val bytes3 = SecureRandom.getSeed(100)
+    val bytes4 = SecureRandom.getSeed(7000)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -639,9 +864,85 @@ class HttpTests {
               add(Headers.TRANSFER_ENCODING, "chunked")
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            assertEquals(
+              1,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            val buf = context.buffer ?: fail<Nothing>("Context buffer should not be null.")
+            assertEquals(Crypto.hex(bytes1) + Crypto.hex(bytes2) + Crypto.hex(bytes3) + Crypto.hex(bytes4),
+                         Crypto.hex(ByteArray(buf.remaining()).apply { buf.get(this) }))
+          }
+        }
+        val client = async {
+          AsynchronousSocketChannel.open().apply {
+            val chunked = ByteBuffer.allocate(20000)
+            chunked.put("${bytes1.size.toString(16)}\r\n".toByteArray())
+            chunked.put(bytes1)
+            chunked.put("\r\n".toByteArray())
+            chunked.put("${bytes2.size.toString(16)}\r\n".toByteArray())
+            chunked.put(bytes2)
+            chunked.put("\r\n".toByteArray())
+            chunked.put("${bytes3.size.toString(16)}\r\n".toByteArray())
+            chunked.put(bytes3)
+            chunked.put("\r\n".toByteArray())
+            chunked.put("${bytes4.size.toString(16)}\r\n".toByteArray())
+            chunked.put(bytes4)
+            chunked.put("\r\n".toByteArray())
+            chunked.put("0\r\n\r\n".toByteArray())
+            chunked.flip()
+            asyncConnect(address)
+            withTimeout(1000L) {
+              asyncWrite(chunked)
+            }
+          }
+        }
+        server.await().close()
+        client.await().close()
+      }
+    }
+  }
+
+  @Test
+  fun testBodyChunkedSlowConnection() {
+    val buffer = ByteBuffer.allocateDirect(4096)
+    val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
+    runBlocking {
+      AsynchronousServerSocketChannel.open().use {
+        it.bind(address)
+        val server = async {
+          it.asyncAccept().apply {
+            val headers = Headers().
+              add(Headers.CONTENT_TYPE, MediaType.TEXT).
+              add(Headers.TRANSFER_ENCODING, "chunked")
+            withTimeout(1000L) { asyncRead(buffer) }
+            buffer.flip()
+            assertEquals(
+              0,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
+            )
+            assertNull(context.buffer)
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
           }
@@ -676,6 +977,10 @@ class HttpTests {
   fun testBodyChunkedInvalidTrailer() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -688,8 +993,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         val client = async {
@@ -712,6 +1027,10 @@ class HttpTests {
   fun testBodyChunkedInvalidTrailerSlowConnection() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -724,8 +1043,18 @@ class HttpTests {
             buffer.flip()
             assertEquals(
               Status.BAD_REQUEST,
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
           }
         }
         val client = async {
@@ -758,6 +1087,10 @@ class HttpTests {
   fun testBodyChunkedWithExtension() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -768,9 +1101,20 @@ class HttpTests {
               add(Headers.TRANSFER_ENCODING, "chunked")
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            assertEquals(
+              0,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
           }
@@ -795,6 +1139,10 @@ class HttpTests {
   fun testBodyChunkedWithExtensionSlowConnection() {
     val buffer = ByteBuffer.allocateDirect(4096)
     val address = InetSocketAddress(InetAddress.getLoopbackAddress(), 8080)
+    val context = object: Context {
+      override var buffer: ByteBuffer? = null
+      override val maxRequestSize: Int = 16384
+    }
     runBlocking {
       AsynchronousServerSocketChannel.open().use {
         it.bind(address)
@@ -805,9 +1153,20 @@ class HttpTests {
               add(Headers.TRANSFER_ENCODING, "chunked")
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            assertNull(
-              Http.body(this, Http.Version.HTTP_1_1, buffer, true, false, headers, null)
+            assertEquals(
+              0,
+              Http.body(
+                this,
+                Http.Version.HTTP_1_1,
+                buffer,
+                context,
+                true,
+                false,
+                headers,
+                null
+              )
             )
+            assertNull(context.buffer)
             assertEquals("this is the body.",
                          String(ByteArray(buffer.remaining()).apply { buffer.get(this) }))
           }
