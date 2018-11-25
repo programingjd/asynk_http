@@ -2,8 +2,6 @@
 
 package info.jdavid.asynk.http.internal
 
-import info.jdavid.asynk.core.asyncRead
-import info.jdavid.asynk.core.asyncWrite
 import info.jdavid.asynk.http.Headers
 import info.jdavid.asynk.http.Method
 import info.jdavid.asynk.http.Status
@@ -141,6 +139,7 @@ object Http {
   }
 
   suspend fun headers(socket: AsynchronousSocketChannel,
+                      socketAccess: SocketAccess,
                       buffer: ByteBuffer,
                       headers: Headers,
                       timeout: Long = 5000L,
@@ -181,9 +180,9 @@ object Http {
         buffer.compact()
         if (buffer.position() == buffer.capacity()) throw HeadersTooLarge()
         if (timeout > 0L) {
-          if (withTimeout(timeout) { socket.asyncRead(buffer) } < 1L) return false
+          if (withTimeout(timeout) { socketAccess.asyncRead(socket, buffer) } < 1L) return false
         }
-        else if (socket.asyncRead(buffer) < 1L) return false
+        else if (socketAccess.asyncRead(socket, buffer) < 1L) return false
         buffer.flip()
         i -= j
         j = 0
@@ -192,7 +191,8 @@ object Http {
     return true
   }
 
-  suspend fun body(socket: AsynchronousSocketChannel,
+  suspend fun body(socket2: AsynchronousSocketChannel,
+                   socketAccess: SocketAccess,
                    version: Version,
                    buffer: ByteBuffer,
                    context: Context,
@@ -221,9 +221,9 @@ object Http {
               else return Status.PAYLOAD_TOO_LARGE
             }
             if (timeout > 0L) {
-              if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) break
+              if (withTimeout(timeout) { socketAccess.asyncRead(socket2, buf) } < 1L) break
             }
-            else if (socket.asyncRead(buf) < 1L) break
+            else if (socketAccess.asyncRead(socket2, buf) < 1L) break
           }
           buf.limit(buf.position()).position(0)
           buf.limit()
@@ -249,18 +249,18 @@ object Http {
           continueBuffer.rewind()
           while (continueBuffer.remaining() > 0) {
             if (timeout > 0L) {
-              withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
+              withTimeout(timeout) { socketAccess.asyncWrite(socket2, continueBuffer) }
             }
-            else socket.asyncWrite(continueBuffer)
+            else socketAccess.asyncWrite(socket2, continueBuffer)
           }
         }
         while (contentLength > buf.limit()) {
           val limit = buf.limit()
           buf.position(limit).limit(buf.capacity())
           if (timeout > 0L) {
-            if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) return Status.BAD_REQUEST
+            if (withTimeout(timeout) { socketAccess.asyncRead(socket2, buf) } < 1L) return Status.BAD_REQUEST
           }
-          else if (socket.asyncRead(buf) < 1L) return Status.BAD_REQUEST
+          else if (socketAccess.asyncRead(socket2, buf) < 1L) return Status.BAD_REQUEST
           buf.limit(buf.position()).position(0)
           if (buf.limit() > contentLength) return Status.BAD_REQUEST
         }
@@ -274,9 +274,9 @@ object Http {
         continueBuffer.rewind()
         while (continueBuffer.remaining() > 0) {
           if (timeout > 0L) {
-            withTimeout(timeout) { socket.asyncWrite(continueBuffer) }
+            withTimeout(timeout) { socketAccess.asyncWrite(socket2, continueBuffer) }
           }
-          else socket.asyncWrite(continueBuffer)
+          else socketAccess.asyncWrite(socket2, continueBuffer)
         }
       }
       // Body with chunked encoding
@@ -311,9 +311,9 @@ object Http {
             val position = buf.position()
             buf.position(limit).limit(buf.capacity())
             if (timeout > 0L) {
-              if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) return Status.BAD_REQUEST
+              if (withTimeout(timeout) { socketAccess.asyncRead(socket2, buf) } < 1L) return Status.BAD_REQUEST
             }
-            else if (socket.asyncRead(buf) < 1L) return Status.BAD_REQUEST
+            else if (socketAccess.asyncRead(socket2, buf) < 1L) return Status.BAD_REQUEST
             buf.limit(buf.position()).position(position)
           }
           val b = buf.get()
@@ -343,9 +343,9 @@ object Http {
             while (buf.limit() < start + chunkSize + 2) {
               buf.position(buf.limit()).limit(buf.capacity())
               if (timeout > 0L) {
-                if (withTimeout(timeout) { socket.asyncRead(buf) } < 1L) return Status.BAD_REQUEST
+                if (withTimeout(timeout) { socketAccess.asyncRead(socket2, buf) } < 1L) return Status.BAD_REQUEST
               }
-              else if (socket.asyncRead(buf) < 1L) return Status.BAD_REQUEST
+              else if (socketAccess.asyncRead(socket2, buf) < 1L) return Status.BAD_REQUEST
               buf.limit(buf.position())
             }
             buf.position(start + chunkSize)

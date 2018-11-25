@@ -6,6 +6,7 @@ import info.jdavid.asynk.core.asyncRead
 import info.jdavid.asynk.core.asyncWrite
 import info.jdavid.asynk.http.internal.Context
 import info.jdavid.asynk.http.internal.Http
+import info.jdavid.asynk.http.internal.SocketAccess
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -132,7 +133,7 @@ class HttpTests {
             val headers = Headers()
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            Http.headers(this, buffer, headers)
+            Http.headers(this, SocketAccess.Raw, buffer, headers)
             assertEquals(4, headers.lines.size)
             assertEquals("a2", headers.value("A"))
             assertEquals("b1", headers.value("B"))
@@ -168,7 +169,7 @@ class HttpTests {
             val headers = Headers()
             withTimeout(1000L) { asyncRead(buffer) }
             buffer.flip()
-            Http.headers(this, buffer, headers)
+            Http.headers(this, SocketAccess.Raw, buffer, headers)
             assertEquals(4, headers.lines.size)
             assertEquals("a2", headers.value("A"))
             assertEquals("b1", headers.value("B"))
@@ -224,6 +225,7 @@ class HttpTests {
               Status.BAD_REQUEST,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_0,
                 buffer,
                 context,
@@ -270,6 +272,7 @@ class HttpTests {
               Status.BAD_REQUEST,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -312,6 +315,7 @@ class HttpTests {
             buffer.flip()
             assertEquals(0, Http.body(
               this,
+              SocketAccess.Raw,
               Http.Version.HTTP_1_0,
               buffer,
               context,
@@ -357,6 +361,7 @@ class HttpTests {
               1,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_0,
                 buffer,
                 context,
@@ -403,6 +408,7 @@ class HttpTests {
               0,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_0,
                 buffer,
                 context,
@@ -465,6 +471,7 @@ class HttpTests {
               0,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -512,6 +519,7 @@ class HttpTests {
               0,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -574,6 +582,7 @@ class HttpTests {
               Status.BAD_REQUEST,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -619,6 +628,7 @@ class HttpTests {
               Status.PAYLOAD_TOO_LARGE,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_0,
                 buffer,
                 context,
@@ -669,6 +679,7 @@ class HttpTests {
               Status.PAYLOAD_TOO_LARGE,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -719,6 +730,7 @@ class HttpTests {
               Status.UNSUPPORTED_MEDIA_TYPE,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_0,
                 buffer,
                 context,
@@ -766,6 +778,7 @@ class HttpTests {
               Status.UNSUPPORTED_MEDIA_TYPE,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -812,6 +825,7 @@ class HttpTests {
               0,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -868,6 +882,7 @@ class HttpTests {
               1,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -933,6 +948,7 @@ class HttpTests {
               0,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -995,6 +1011,7 @@ class HttpTests {
               Status.BAD_REQUEST,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -1045,6 +1062,7 @@ class HttpTests {
               Status.BAD_REQUEST,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -1105,6 +1123,7 @@ class HttpTests {
               0,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
@@ -1157,6 +1176,7 @@ class HttpTests {
               0,
               Http.body(
                 this,
+                SocketAccess.Raw,
                 Http.Version.HTTP_1_1,
                 buffer,
                 context,
