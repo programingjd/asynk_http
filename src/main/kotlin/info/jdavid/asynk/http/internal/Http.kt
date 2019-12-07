@@ -69,7 +69,7 @@ object Http {
     // 1. Look for first space to extract METHOD
     var i = 0
     while (true) {
-      if (i == 7) return null
+      if (i == 10) return null
       val b = buffer[i++]
       if (validMethod(b)) continue
       if (b == SPACE) break

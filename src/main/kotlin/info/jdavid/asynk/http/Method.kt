@@ -32,7 +32,7 @@ sealed class Method {
         "PUT" -> PUT
         "DELETE" -> DELETE
         "PATCH" -> PATCH
-        else -> throw RuntimeException("Unexpected HTTP method: ${m}")
+        else -> Custom(m)
       }
     }
   }
